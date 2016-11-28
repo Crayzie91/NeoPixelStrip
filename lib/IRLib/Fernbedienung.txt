@@ -1,0 +1,6 @@
+Rewind:6CE9
+Play:2CE9
+Forward:1CE9
+Last:1EE9
+Stop:CE9
+Next:5EE9
