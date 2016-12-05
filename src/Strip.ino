@@ -58,7 +58,7 @@ void setup() {
   pinMode(button2,INPUT);
   attachInterrupt(0, button1isr, RISING);//Pin2 Hardware Interrupt
   attachInterrupt(1, button2isr, RISING);//Pin3 Hardware Interrupt
-  
+
   randomSeed(analogRead(2));
 }
 
@@ -105,6 +105,7 @@ void stripoff(void){
 void button1isr(void){
   Serial.println("Button1ISR");
   isr=1;
+  once=0;
   if(on){
     stripoff();
   }
