@@ -16,7 +16,7 @@
 #define BLAU 170
 #define VIOLETT 215
 
-#define RECV_PIN 11
+#define RECV_PIN 3
 #define REWIND 0x6CE9
 #define PLAY 0x2CE9
 #define FORWARD 0x1CE9
@@ -28,9 +28,9 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRBW + NEO_KHZ800
 uint8_t array[NUM_LEDS],array2[NUM_LEDS];
 unsigned int Buffer[RAWBUF];
 volatile bool recv=0, once=0, on=1, isr=0;//Variable for:IR signal received, function called once, strip is on, isr was triggered
-volatile uint32_t count;//Loop count
+volatile uint32_t count=0;//Loop count
 
-const byte button1=2, button2=3, AnalogIn=A0; //Pins for Buttons and Lightsensor
+const byte buttonIR=2, ir=3, AnalogIn=A0, Button1In=A4, Button2In=A5; //Pins for Buttons and Lightsensor a
 int mode=0; //Global mode of Strip
 double LightSensor=0, LightSensorOld=0; //Global Lightsensor variable for ISR
 
@@ -50,14 +50,16 @@ void setup() {
   My_Receiver.enableIRIn(); // Start the receiver
   My_Decoder.UseExtnBuf(Buffer);
 
-  //Timer1.initialize();//Every sec
-  //Timer1.attachInterrupt(timercallback);
+  Timer1.initialize(1000000);//Every sec
+  Timer1.attachInterrupt(timercallback);
 
   //Set Buttonpins and attach Interrupt
-  pinMode(button1,INPUT);
-  pinMode(button2,INPUT);
-  attachInterrupt(0, button1isr, RISING);//Pin2 Hardware Interrupt
-  attachInterrupt(1, button2isr, RISING);//Pin3 Hardware Interrupt
+  pinMode(buttonIR,INPUT);
+  pinMode(ir,INPUT);
+  pinMode(Button1In,INPUT);
+  pinMode(Button2In,INPUT);
+  attachInterrupt(0, buttonisr, RISING);//Pin2 Hardware Interrupt
+  attachInterrupt(1, irisr, RISING);//Pin3 Hardware Interrupt
 
   randomSeed(analogRead(2));
 }
@@ -88,13 +90,11 @@ void setMode(void){
       break;
     }
   }
-  else
-    stripoff();
 }
-
 
 void stripoff(void){
   on=0;
+  once=0;
   for(int i=0;i<strip.numPixels(); i++){
     strip.setPixelColor(i, 0,0,0);
   }
@@ -102,7 +102,35 @@ void stripoff(void){
   mode=0;
 }
 
-void button1isr(void){
+void timercallback(void){
+  if(count%600==0 && on){//ca. every 10 minutes
+    dimmer();
+  }
+  count++;
+}
+
+void irisr(void){
+  isr=1;
+  noInterrupts();
+  checkirreceiver();
+  interrupts();
+  Serial.println("ISR2");
+}
+
+void buttonisr(void){
+  isr=1;
+  Serial.println("ISR1");
+  int val1=analogRead(Button1In);
+  int val2=analogRead(Button2In);
+
+  if(val1>val2)
+    button1();
+  if(val2>val1)
+    button2();
+}
+
+//Action for Button1
+void button1(void){
   Serial.println("Button1ISR");
   isr=1;
   once=0;
@@ -113,8 +141,8 @@ void button1isr(void){
     on=1;
   }
 }
-
-void button2isr(void){
+//Action for Button2
+void button2(void){
   Serial.println("Button2ISR");
   isr=1;
   mode++;
@@ -146,14 +174,14 @@ void dimmer(void){
   LightSensorOld=LightSensor;
 }
 
+//Check IR Receiver and decode signale
 void checkirreceiver(void){
-  unsigned long start;
-  //Check IR as long as no interrupt occured or a signal was received, leave loop every x steps
-  while(millis()-start>100){
-    if (My_Receiver.GetResults(&My_Decoder)) {
+    if (My_Receiver.GetResults(&My_Decoder)
+          && My_Decoder.value==0) {
+      Serial.println("Received Signal");
       //Decode the IR signal
       My_Decoder.decode();
-      if(My_Decoder.decode_type==SONY){
+
         My_Decoder.DumpResults();
         switch(My_Decoder.value){
         case PLAY:
@@ -175,38 +203,26 @@ void checkirreceiver(void){
           mode--;
           setMode();
           break;
+    /*    default:
+          Serial.println("Defautl->Fehler!");
+          Serial.println(My_Decoder.value);
+          break;*/
         }
-      }
+        Serial.print("Mode: ");
+        Serial.println(mode);
+        Serial.print("On: ");
+        Serial.println(on);
       //Restart Receiver
       My_Receiver.resume();
     }
-  }
-}
-
-void timercallback(void){
-  Serial.println("Timer");
-  checkirreceiver();
 }
 
 void loop() {
-  //unsigned long start;
-  /* //Check IR as long as no interrupt occured or a signal was received, leave loop every x steps
-   while(millis()-start>100){//!isr && !recv){
-   //check IR Receiver
-   checkirreceiver();
-   };
-   recv=0;*/
-
-  if(count%1000000==0)//ca. every 10 minutes
-    dimmer();
-  count++;
-
   //reset isr variable
   if(isr)
     isr=0;
 
   setMode();
-
 }
 
 
@@ -241,6 +257,7 @@ void AllWhite(void) {
 }
 
 //Dynamic rainbow pattern
+//Input wait period
 void RainbowFlow(uint8_t wait) {
   uint16_t i, j;
 
